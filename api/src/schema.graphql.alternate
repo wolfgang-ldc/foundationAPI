@@ -1,0 +1,882 @@
+scalar Point
+scalar DateTime
+scalar PointInput
+
+type User {
+  userId: ID!
+  name: String
+  reviews: [Review] @relationship(type: "WROTE", direction: OUT)
+  avgStars: Float
+    @cypher(
+      statement: "MATCH (this)-[:WROTE]->(r:Review) RETURN toFloat(avg(r.stars))"
+    )
+  numReviews: Int
+    @cypher(statement: "MATCH (this)-[:WROTE]->(r:Review) RETURN COUNT(r)")
+  recommendations(first: Int = 3): [Business]
+    @cypher(
+      statement: "MATCH (this)-[:WROTE]->(r:Review)-[:REVIEWS]->(:Business)<-[:REVIEWS]-(:Review)<-[:WROTE]-(:User)-[:WROTE]->(:Review)-[:REVIEWS]->(rec:Business) WHERE NOT EXISTS( (this)-[:WROTE]->(:Review)-[:REVIEWS]->(rec) ) WITH rec, COUNT(*) AS num ORDER BY num DESC LIMIT $first RETURN rec"
+    )
+}
+
+type Business {
+  businessId: ID!
+  name: String!
+  address: String
+  city: String
+  state: String
+  location: Point
+  avgStars: Float
+    @cypher(
+      statement: "MATCH (this)<-[:REVIEWS]-(r:Review) RETURN coalesce(avg(r.stars),0.0)"
+    )
+  reviews: [Review] @relationship(type: "REVIEWS", direction: IN)
+  categories: [Category] @relationship(type: "IN_CATEGORY", direction: OUT)
+}
+
+type Review {
+  reviewId: ID!
+  stars: Float
+  text: String
+  date: DateTime
+  business: Business @relationship(type: "REVIEWS", direction: OUT)
+  user: User @relationship(type: "WROTE", direction: IN)
+}
+
+type Category {
+  name: ID!
+  businesses: [Business] @relationship(type: "IN_CATEGORY", direction: IN)
+}
+
+type RatingCount @exclude {
+  stars: Float!
+  count: Int!
+}
+
+type Mutation {
+  mergeBusinessCategory(categories: [String!]!, businessId: ID!): Business
+    @cypher(
+      statement: "MATCH (b:Business {businessId: $businessId}) UNWIND $categories AS cat MERGE (c:Category {name: cat}) MERGE (b)-[:IN_CATEGORY]->(c) RETURN b"
+    )
+  mergeUser(name: String!, userId: ID!): User
+    @cypher(
+      statement: """
+      MERGE (u:User {userId: $userId})
+      ON CREATE SET u.name = $name
+      RETURN u
+      """
+    )
+  mergeBusiness(
+    businessId: ID!
+    name: String!
+    address: String!
+    city: String!
+    state: String!
+    latitude: Float!
+    longitude: Float!
+  ): Business
+    @cypher(
+      statement: """
+      MERGE (b:Business {businessId: $businessId})
+      ON CREATE SET b.name = $name,
+                    b.address = $address,
+                    b.city = $city,
+                    b.state = $state,
+                    b.location = Point({latitude: $latitude, longitude: $longitude})
+      RETURN b
+      """
+    )
+}
+
+
+type BiologicalProcess {
+   FID: ID!
+   FID_S: Int
+   Name: String
+   AlternateNames: String
+   Description: String
+   HomePage: String
+   Type: String
+   CreationDate: String
+   Companies: [Company] @relationship(type: "worksOn", direction: IN)
+ }
+ 
+ type BiologicalStructure {
+   FID: ID!
+   FID_S: Int
+   Name: String
+   AlternateNames: String
+   Description: String
+   HomePage: String
+   Type: String
+   CreationDate: String
+ }
+ 
+ type ClinicalTrial {
+  FID: ID!
+  FID_S: Int
+  Acronym: String
+  Name: String
+  Description: String
+  Conditions: String
+  Intervention: String
+  SponsorCollaborator: String
+  StudyType: String
+  StudyResults: String
+  HomePage: String
+  Recruitment: String
+  Enrollment: Int
+  FirstPostedDate: String
+  StartDate: String
+  CompletionDate: String
+  Stage: String
+  Type: String
+  Companies: [Company] @relationship(type: "sponsoredByCompany", direction: OUT)
+  DevelopmentStages: [DevelopmentStage] @relationship(type: "isInDevelopmentStage", direction: OUT)
+  Diseases: [Disease] @relationship(type: "isEvaluatingDisease", direction: OUT)
+  Events: [Event] @relationship(type: "hasRelatedClinicalTrialsRecord", direction: IN)
+  Predictions: [Prediction] @relationship(type: "hasRelatedClinicalTrialsRecord", direction: IN)
+  TherapeuticMolecules: [TherapeuticMolecule] @relationship(type: "usesTherapeuticMolecule", direction: OUT)
+  hasFirstPostedDate: [Date] @relationship(type: "hasFirstPostedDate", direction: OUT)
+ }
+
+ type City {
+   FID: ID!
+   FID_S: Int
+   Name: String
+   Country: [Country] @relationship(type: "belongsToCountry", direction: OUT)
+   State: [State] @relationship(type: "belongsToState", direction: OUT)
+ }
+
+ type Company {
+  FID: ID!
+  FID_S: Int
+  Name: String
+  AlternateNames: String
+  Description: String
+  FinanceStatus: String
+  HomePage: String
+  LinkedIn: String
+  Twitter: String
+  YahooFinance: String
+  NewSynonyms: String
+  image: String
+  Type: String
+  CreationDate: String
+  FoundationYear: Int
+  BioStructure: [BiologicalStructure] @relationship(type: "worksOn", direction: OUT)
+  ClinicalTrials: [ClinicalTrial] @relationship(type: "sponsoredByCompany", direction: IN)
+  CollaborationMolecules: [TherapeuticMolecule] @relationship(type: "developedWithCollaborator", direction: IN)
+  CompanyClass: [CompanyClass] @relationship(type: "typeOfClass", direction: OUT)
+  Events: [Event]
+    @cypher(statement: "MATCH (this)<-[:involvesCollaboratedCompany|involvesCollaboratingCompany|involvesCompany]-(e:Event) RETURN e")
+  Items: [Item]
+    @cypher(statement: "MATCH (this)-[]-(n) RETURN n")
+  Locations: [City] @relationship(type: "hasLocationInCity", direction: OUT)
+  PipelineMolecules: [TherapeuticMolecule] @relationship(type: "developedByCompany", direction: IN)
+  RetiredMolecules: [TherapeuticMolecule] @relationship(type: "noLongerDevelopedByCompany", direction: IN)
+  CompletePipelineMolecules: [TherapeuticMolecule]
+    @cypher(statement: "MATCH (this)<-[:developedByCompany|developedWithCollaborator]-(t:TherapeuticMolecule) RETURN t")
+  CompanyProducts: [TherapeuticProduct] @relationship(type: "isProducedByCompany", direction: IN)
+  TherapeuticAreas: [TherapeuticArea] @relationship(type: "worksInArea", direction: OUT)
+  ScoreCards: [ScoreCard] @relationship(type: "involvesCompany", direction: IN)
+}
+
+type CompanyClass {
+   FID: ID!
+   FID_S: Int
+   Name: String
+   AlternateNames: String
+   Description: String
+   Companies: [Company] @relationship(type: "typeOfClass", direction: IN)
+ }
+
+type Country {
+   FID: ID!
+   FID_S: Int
+   Name: String
+ }
+
+type FDate {
+  FID: ID!
+  FID_S: Int
+  Name: String
+}
+
+type DevelopmentStage {
+  FID: ID!
+  FID_S: Int
+  Name: String
+  Description: String
+  ClinicalTrials: [ClinicalTrial] @relationship(type: "isInDevelopmentStage", direction: IN)
+}
+
+type Disease {
+  FID: ID!
+  FID_S: Int
+  Name: String
+  AlternateNames: String
+  Description: String
+  HomePage: String
+  CreationDate: String
+  Type: String
+  ClinicalTrials: [ClinicalTrial] @relationship(type: "isEvaluatingDisease", direction: IN)
+  TherapeuticMolecules: [TherapeuticMolecule] @relationship(type: "isApprovedForDisease", direction: IN)
+  Approvals: [Event] @relationship(type: "isApprovedForDisease", direction: IN)
+}
+
+type Event {
+  FID: ID!
+  FID_S: Int
+  Name: String
+  Description: String
+  EventDate: String
+  HomePage: String
+  Type: String
+  ApprovedMolecules: [TherapeuticMolecule] @relationship(type: "involvesTherapeuticMolecule", direction: OUT)
+  Companies: [Company]
+    @cypher(statement: "MATCH (this)-[:involvesCollaboratedCompany|involvesCollaboratingCompany|involvesCompany]->(c:Company) RETURN c")
+  EventOutcomes: [EventOutcome] @relationship(type: "hasOutcome", direction: OUT)
+  EventOutcomeTypes: [EventOutcomeType] @relationship(type: "hasOutcomeType", direction: OUT)
+  EventTypes: [EventClass] @relationship(type: "typeOfClass", direction: OUT)
+  Items: [Item]
+    @cypher(statement: "MATCH (this)-[]-(n) RETURN n")
+}
+
+type EventClass {
+  FID: ID!
+  FID_S: Int
+  Name: String
+}
+
+type EventOutcome {
+  FID: ID!
+  FID_S: Int
+  Name: String
+}
+
+type EventOutcomeType {
+  FID: ID!
+  FID_S: Int
+  Name: String
+}
+
+type GeneticAlteration {
+  FID: ID!
+  FID_S: Int
+  Name: String
+  Description: String
+}
+
+type Item {
+  FID: ID!
+  FID_S: Int
+  Name: String
+  AlternateNames: String
+  NewSynonyms: String
+  Description: String
+  HomePage: String
+  CreationDate: String
+  Type: String
+  image: String
+}
+
+type ItemCount {
+  type: String
+  count: Int!
+  status: String
+}
+
+type ItemCoreCount {
+  coreType: String
+  coreCount: Int!
+}
+
+
+type MasterConcept {
+  FID: ID!
+  FID_S: Int
+  Name: String
+  Description: String
+  image: String
+}
+
+type Modality {
+  FID: ID!
+  FID_S: Int
+  Name: String
+  Description: String
+}
+
+type MolecularTarget {
+  FID: ID!
+  FID_S: Int
+  Name: String
+  Description: String
+  HomePage: String
+  AlternateNames: String
+  Type: String
+  CreationDate: String
+  SourceReferences: [SourceReference]
+    @cypher(statement: "MATCH (this)-[:occursInTitleOfSourceReference|occursInAbstractOfSourceReference|occursInBodyOfSourceReference]->(sr:SourceReference) RETURN sr")
+  TherapeuticMolecules: [TherapeuticMolecule]
+    @cypher(statement: "MATCH (this)<-[:activatesTarget|bindsTarget|containsTarget|degradesTarget|inhibitsTargets|inhibitsOnlyTarget]-(t:TherapeuticMolecule) RETURN t")
+}
+
+type Person {
+  FID: ID!
+  FID_S: Int
+  Name: String
+  FirstName: String
+  LastName: String
+  Title: String
+  Description: String
+  Companies: [Company]
+    @cypher(statement: "MATCH (this)<-[:hasRoleInOrganization]-(c:Company) RETURN c")
+}
+
+type Prediction {
+  FID: ID!
+  FID_S: Int
+  Name: String
+  Description: String
+  EventActualDate: String
+  EventDate: String
+  EventQuarter: String
+  EventYear: Int
+  EventOutcome: String
+  Stage: String
+  HomePage: String
+  Type: String
+  ClinicalTrials: [ClinicalTrial] @relationship(type: "hasRelatedClinicalTrialsRecord", direction: OUT)
+  Companies: [Company] @relationship(type: "isPlannedForByCompany", direction: OUT)
+  Diseases: [Disease] @relationship(type: "isIndicatedForDisease", direction: OUT)
+  Molecules: [TherapeuticMolecule] @relationship(type: "involvesTherapeuticMolecule", direction: OUT)
+  Outcome: [EventOutcome] @relationship(type: "hasOutcome", direction: OUT)
+  PredictionTypes: [PredictionClass] @relationship(type: "typeOfClass", direction: OUT)
+  Items: [Item]
+    @cypher(statement: "MATCH (this)-[]-(n) RETURN n")
+}
+
+type PredictionClass {
+  FID: ID!
+  FID_S: Int
+  Name: String
+}
+
+type ProductSales {
+  FID: ID!
+  FID_S: Int
+  Name: String
+  YearQuarter: String
+  Description: String
+  Sales_US: Float
+  Sales_ROW: Float
+  TotalSales: Float
+  Type: String
+  CreationDate: String
+  Products:[TherapeuticProduct] @relationship(type: "hasTherapeuticProduct", direction: IN)
+  Earnings:[QuarterlyEarnings] @relationship(type: "hasQuarterlyEarnings", direction: IN)
+}
+
+type QuarterlyEarnings {
+  FID: ID!
+  FID_S: Int
+  Name: String
+  Description: String
+  Quarter: String
+  Year: Int
+  YearQuarter: String
+  Companies: [Company] @relationship(type: "involvesCompany", direction: OUT)
+  Products: [TherapeuticProduct] @relationship(type: "hasProductSalesFor", direction: OUT)
+  Dates: [FDate]
+    @cypher(statement: "MATCH (this)-[:hasADate]->(d:Date) RETURN d")
+  Earnings: [Sales]
+}
+
+
+type Sales @relationship(type: "hasProductSalesFor") {
+  from: QuarterlyEarnings
+  to: TherapeuticProduct
+  Sales_US: Float
+  Sales_ROW: Float
+  CreationDate: String
+}
+
+type ScoreCard {
+  FID: ID!
+  FID_S: Int
+  Name: String
+  Description: String
+  NewSynonyms: String
+  NextEvaluation: String
+  InvestmentStatus: String
+  Portfolio: String
+  Sector: String
+  Shares: Int
+  HomePage: String
+  Downside: Int
+  DownsideRisk: String
+  Upside: Int
+  UpsideRisk: String
+  Earnings: String
+  Finances: String
+  FinanceReach: String
+  Concern: String
+  CashAtHand: String
+  Competition: String
+  Products: String
+  Opportunity: String
+  CurrentPrice: String
+  PreviousPrice: String
+  PercentDifference: String
+  OverallScore: Float
+  CreationDate: String
+  ModificationDate: String
+  Type: String
+}
+
+type SourceReference {
+  FID: ID!
+  FID_S: Int
+  Name: String
+  Description: String
+  HomePage: String
+  CreationDate: String
+  Items: [Item]
+    @cypher(statement: "MATCH (this)<-[:occursInTitleOfSourceReference|occursInBodyOfSourceReference|occursInAbstractOfSourceReference|occursInSourceReference]-(n) RETURN n")
+}
+
+type State {
+  FID: ID!
+  FID_S: Int
+  Name: String
+  Description: String
+  Country: [Country] @relationship(type: "belongsToCountry", direction: OUT)
+  Cities: [City] @relationship(type: "belongsToState", direction: IN)
+}
+
+type Summary {
+  FID: ID!
+  FID_S: Int
+  Name: String
+  Description: String
+  DateRange: [FDate]
+    @cypher(statement: "MATCH (this)-[:hasAssociatedDates]->(d:Date) RETURN d")
+  DateYear: [FDate]
+    @cypher(statement: "MATCH (this)-[:hasAssociatedYear]->(d:Date) RETURN d")
+  DateQuarter: [FDate]
+    @cypher(statement: "MATCH (this)-[:hasAssociatedQuarter]->(d:Date) RETURN d")
+}
+
+type TherapeuticArea {
+  FID: ID!
+  FID_S: Int
+  Name: String
+  Description: String
+}
+
+type TherapeuticMolecule {
+  FID: ID!
+  FID_S: Int
+  Name: String
+  Description: String
+  HomePage: String
+  AlternateNames: String
+  HighestDevelopmentStage: String
+  CompanyList: String
+  MolecularTargetList: String
+  NoOfTrials: Int
+  PipelineStatus: String
+  PrimaryModality: String
+  Type: String
+  CreationDate: String
+  ApprovedDiseases: [Disease] @relationship(type: "isApprovedForDisease", direction: OUT)
+  ClinicalTrials: [ClinicalTrial] @relationship(type: "usesTherapeuticMolecule", direction: IN)
+  Companies: [Company]
+    @cypher(statement: "MATCH (this)-[:developedByCompany|developedWithCollaborator|noLongerDevelopedByCompany|noLongerDevelopedWithCollaborator|originallyDevelopedByCompany|developedThroughAcquisitionByCompany]->(co:Company) RETURN co")
+  DevelopmentStages: [DevelopmentStage] @relationship(type: "isInHighestDevelopmentStage", direction: OUT)
+  Diseases: [Disease]
+    @cypher(statement: "MATCH (this)-[:isIndicatedForDisease|isApprovedForDisease]->(d:Disease) RETURN d")
+  Events: [Event] @relationship(type: "involvesTherapeuticMolecule", direction: IN)
+  Modalities: [Modality] @relationship(type: "hasPrimaryModality", direction: OUT)
+  MolecularTargets: [MolecularTarget]
+    @cypher(statement: "MATCH (this)-[:activatesTarget|bindsTarget|containsTarget|degradesTarget|inhibitsTargets|inhibitsOnlyTarget]->(mt:MolecularTarget) RETURN mt")
+  Mutations: [Mutation]
+    @cypher(statement: "MATCH (this)-[:inhibitsMutation|doesNotInhibitMutation]->(mu:Mutation) RETURN mu")
+  TherapeuticProducts: [TherapeuticProduct] @relationship(type: "isBasedOnTherapeuticMolecule", direction: IN)
+}
+
+type TherapeuticProduct {
+  FID: ID!
+  FID_S: Int
+  Name: String
+  Description: String
+  HomePage: String
+  CreationDate: String
+  image: String
+  Type: String
+  Companies: [Company] @relationship(type: "isProducedByCompany", direction: OUT)
+  Molecules: [TherapeuticMolecule] @relationship(type: "isBasedOnTherapeuticMolecule", direction: OUT)
+  Earnings: [QuarterlyEarnings] @relationship(type: "hasProductSalesFor", direction: IN)
+  Sales: [Sales]
+  ProductSales: [ProductSales] @relationship(type: "hasTherapeuticProduct", direction: IN)
+}
+
+type ClinicalTrialCount {
+  group: String
+  count: Int!
+}
+
+
+
+type CompanyCount {
+  group: String
+  count: Int!
+}
+
+type Query {
+  userCount: Int! @cypher(statement: "MATCH (u:User) RETURN COUNT(u)")
+  ratingsCount: [RatingCount]
+    @cypher(
+      statement: "MATCH (r:Review) WITH r.stars AS stars, COUNT(*) AS count ORDER BY stars RETURN {stars: stars, count: count}"
+    )
+
+  clinicalTrialByName(substring: String = ""): [ClinicalTrial]
+  @cypher(
+      statement: """MATCH (c:ClinicalTrial)
+      WHERE c.Name = $substring
+      WITH c
+      RETURN c"""
+  )
+
+  clinicalTrialsByCompany(substring: String = ""): [ClinicalTrial]
+  @cypher(
+      statement: """MATCH (ct:ClinicalTrial)-[:sponsoredByCompany]->(c:Company)
+      WHERE c.Name CONTAINS $substring
+      WITH ct
+      RETURN ct"""
+  )
+
+  clinicalTrialsByCompanyID(substring: Int = 0): [ClinicalTrial]
+  @cypher(
+      statement: """MATCH (ct:ClinicalTrial)-[:sponsoredByCompany]->(c:Company)
+      WHERE c.FID_S = $substring
+      WITH ct
+      RETURN ct"""
+  )
+
+clinicalTrialsByDiseaseID(substring: Int = 0): [ClinicalTrial]
+  @cypher(
+      statement: """MATCH (ct:ClinicalTrial)-[:isEvaluatingDisease]->(d:Disease)
+      WHERE d.FID_S = $substring
+      WITH ct
+      RETURN ct"""
+  )
+
+  companyCount: [CompanyCount]
+    @cypher(
+      statement: "MATCH (g:Company) WITH g.FinanceStatus as group, COUNT(*) as count ORDER BY count RETURN {group: group, count: count}"
+    )
+
+  companiesByBioStructure(substring: String = ""): [Company]
+  @cypher(
+      statement: """MATCH (c:Company)-[:worksOn]-(bs:BiologicalStructure)
+      WHERE bs.AlternateNames CONTAINS $substring
+      WITH c
+      RETURN c"""
+  )
+
+  companiesByName(substring: String = ""): [Company]
+  @cypher(
+      statement: """MATCH (c:Company)
+      WHERE c.AlternateNames CONTAINS $substring
+      WITH c
+      RETURN c"""
+  )
+
+  companyByID(substring: Int = 0): [Company]
+  @cypher(
+      statement: """MATCH (c:Company)
+      WHERE c.FID = $substring
+      WITH c
+      RETURN c"""
+  )
+
+  companyByName(substring: String = ""): [Company]
+  @cypher(
+      statement: """MATCH (c:Company)
+      WHERE c.Name = $substring
+      WITH c
+      RETURN c"""
+  )
+
+  companyClassByID(substring: Int = 0): [CompanyClass]
+  @cypher(
+      statement: """MATCH (c:CompanyClass)
+      WHERE c.FID_S = $substring
+      WITH c
+      RETURN c"""
+  )
+
+
+  eventsByCompany(substring: String = ""): [Event]
+  @cypher(
+      statement: """MATCH (e:Event)-[:involvesCompany|involvesCollaboratedCompany|involvesCollaboratingCompany]->(c:Company)
+      WHERE c.Name CONTAINS $substring
+      WITH e
+      RETURN e"""
+  )
+ 
+  eventsByCompanyID(substring: Int = 0): [Event]
+  @cypher(
+      statement: """MATCH (e:Event)-[:involvesCompany|involvesCollaboratedCompany|involvesCollaboratingCompany]->(c:Company)
+      WHERE c.FID_S = $substring
+      WITH e
+      RETURN e"""
+  )
+
+  eventsByType(substring: String = ""): [Event]
+  @cypher(
+      statement: """MATCH (ec:EventClass)<-[:typeOfClass]-(e:Event)-[:involvesCompany]->(c:Company)
+      WHERE ec.Name CONTAINS $substring
+      WITH e
+      RETURN e"""
+  )
+
+  itemByID(substring: Int = 0): [Item]
+  @cypher(
+      statement: """MATCH (n)
+      WHERE n.FID_S = $substring
+      WITH n
+      RETURN n"""
+  )
+
+  itemsByCompanyName(substring: String = ""): [Item]
+  @cypher(
+      statement: """MATCH (c:Company)-[]-(n)
+      WHERE c.Name = $substring
+      WITH n
+      RETURN n"""
+  )
+
+  itemsByCompanyIDAndType(substring: String ="",subtype: String = ""): [Item]
+  @cypher(
+      statement: """MATCH (c:Company)-[]-(n)
+      WHERE c.FID_S = toInteger($substring) AND n.Type = $subtype
+      WITH n
+      RETURN n"""
+  )
+  
+  itemsByCompanyNameAndType(substring: String = "",subtype: String = ""): [Item]
+  @cypher(
+      statement: """MATCH (c:Company)-[]-(n)
+      WHERE c.Name = $substring AND n.Type = $subtype
+      WITH n
+      RETURN n"""
+  )
+
+  itemsByIDArray(substring: Int = 0): [Item]
+  @cypher(
+      statement: """MATCH (c:Item)
+      WHERE c.FID_S IN [$substring]
+      WITH c
+      RETURN c"""
+  )
+  
+  itemsByName(substring: String = ""): [Item]
+  @cypher(
+      statement: """MATCH (n)
+      WHERE toLower(n.AlternateNames) CONTAINS toLower($substring)
+      WITH n
+      RETURN n"""
+  )
+
+  
+  itemsByNameAndType(namestring: String = "",typestring: String = ""): [Item]
+  @cypher(
+      statement: """MATCH (n)
+      WHERE toLower(n.AlternateNames) CONTAINS toLower($namestring) AND n.Type = $typestring
+      WITH n
+      RETURN n"""
+  )
+
+  itemsByDate(substring: String = ""): [FDate]
+  @cypher(
+      statement: """MATCH (d:Date)
+      WHERE d.Name = $substring
+      WITH d
+      RETURN d"""
+  )
+
+  itemsByType(substring: String = ""): [Item]
+  @cypher(
+      statement: """MATCH (n)
+      WHERE n.Type = $substring
+      WITH n
+      RETURN n"""
+  )
+
+  itemCount: [ItemCount]
+    @cypher(
+      statement: """MATCH (n) 
+        CALL{
+        WITH n
+        OPTIONAL MATCH (m:MasterConcept) 
+        WHERE m.Name = n.Type
+        RETURN m.HomePage as status
+        }
+        MATCH (n)
+        WHERE status = 'VISIBLE'
+        WITH n.Type as group, COUNT(*) as count,status ORDER BY count RETURN {type: group, count: count, status: status}"""
+    )
+
+  itemCountByCoreTypes: [ItemCoreCount]
+    @cypher(
+      statement: "MATCH (n) WHERE n.Type IN ['City','ClinicalTrial','Organization:Company','Disease','Event','Modality','MolecularTarget','TherapeuticMolecule','TherapeuticProduct'] WITH n.Type as group, COUNT(*) as count ORDER BY count RETURN {coreType: group, coreCount: count}"
+    )
+
+
+  moleculesByCompany(companySubstring: String = ""): [TherapeuticMolecule]
+  @cypher(
+      statement: """MATCH (c:Company)<-[]-(t:TherapeuticMolecule)
+      WHERE c.Name CONTAINS $companySubstring
+      WITH c, t
+      RETURN t"""
+  )
+
+  moleculesByCompanyID(substring: Int = 0): [TherapeuticMolecule]
+  @cypher(
+      statement: """MATCH (c:Company)<-[]-(t:TherapeuticMolecule)
+      WHERE c.FID_S = $substring
+      WITH t
+      RETURN t"""
+  )
+
+  moleculesByName(moleculeSubstring: String = ""): [TherapeuticMolecule]
+  @cypher(
+      statement: """MATCH (t:TherapeuticMolecule)
+      WHERE t.Name = $moleculeSubstring
+      WITH t
+      RETURN t"""
+  )
+
+  moleculesApprovedForSpecificDisease(diseaseSubstring: String): [TherapeuticMolecule]
+  @cypher(
+    statement: """MATCH (d:Disease)<-[r:isApprovedForDisease]-(t:TherapeuticMolecule) 
+    WHERE d.Name CONTAINS $diseaseSubstring 
+    RETURN t
+    """
+  )
+
+  moleculesBySpecificDisease(diseaseSubstring: String): [TherapeuticMolecule]
+  @cypher(
+    statement: """MATCH (d:Disease)<-[r:isApprovedForDisease]-(t:TherapeuticMolecule) 
+    WHERE d.Name CONTAINS $diseaseSubstring 
+    RETURN t
+    UNION
+    MATCH (d:Disease)<-[r:isIndicatedForDisease]-(t:TherapeuticMolecule)
+    WHERE d.Name CONTAINS $diseaseSubstring
+    RETURN t"""
+  )
+
+moleculesByTarget(targetSubstring: String = ""): [TherapeuticMolecule]
+  @cypher(
+      statement: """MATCH (mt:MolecularTarget)<-[:activatesTarget|bindsTarget|containsTarget|inhibitsTargets|inhibitsOnlyTarget|inhibitsTargetIndirectly]-(t:TherapeuticMolecule)
+      WHERE mt.Name = $targetSubstring
+      WITH t
+      RETURN t"""
+  )
+
+  moleculesSimilarByTarget(moleculeSubstring: String = ""): [TherapeuticMolecule]
+  @cypher(
+      statement: """MATCH (t1:TherapeuticMolecule)-[]-(mt1:MolecularTarget) WHERE t1.Name = $moleculeSubstring
+                    WITH collect(mt1) as targets
+                    MATCH (t:TherapeuticMolecule)
+                    WHERE ALL(mt1 in targets WHERE (mt1)<-[]-(t:TherapeuticMolecule)) 
+                    RETURN t
+                  """
+  )
+
+  quarterlyEarningsByProductID(productSubstring: String = ""): [QuarterlyEarnings]
+  @cypher(
+      statement: """MATCH (t:TherapeuticProduct)<-[:hasProductSalesFor]-(q:QuarterlyEarnings)
+      WHERE t.Name = $productSubstring
+      WITH t,q
+      RETURN q"""
+  )
+
+  productsByName(productSubstring: String = ""): [TherapeuticProduct]
+  @cypher(
+      statement: """MATCH (t:TherapeuticProduct)
+      WHERE t.Name = $productSubstring
+      WITH t
+      RETURN t"""
+  )
+
+  sourceReferenceByID(substring: Int = 0): [SourceReference]
+  @cypher(
+      statement: """MATCH (c:SourceReference)
+      WHERE c.FID = $substring
+      WITH c
+      RETURN c"""
+  )
+
+  summaryByYearAndQuarter(year: String = "",quarter: String = ""): [Summary]
+  @cypher(
+      statement: """MATCH (s:Summary)-[]-(d:Date)
+      WHERE d.Name = $year
+      WITH s
+      MATCH (s:Summary)-[]-(d:Date)
+      WHERE d.Name = $quarter
+      RETURN DISTINCT(s)"""
+  )
+
+  summaryYears: [FDate]
+  @cypher(
+      statement: """MATCH (s:Summary)-[:hasAssociatedYear]-(d:Date)
+      RETURN DISTINCT(d)"""
+  )
+
+  summaryQuartersByYear(year: String = ""): [FDate]
+  @cypher(
+      statement: """MATCH (s:Summary)-[:hasAssociatedYear]-(d:Date)
+      WHERE d.Name = $year
+      WITH s
+      MATCH (s:Summary)-[:hasAssociatedQuarter]-(d:Date)
+      RETURN DISTINCT(d)"""
+  )
+
+  targetsByName(targetSubstring: String = ""): [MolecularTarget]
+  @cypher(
+      statement: """MATCH (mt:MolecularTarget)
+      WHERE mt.Name = $targetSubstring
+      WITH mt
+      RETURN mt"""
+  )
+
+  trialsByCompany(companySubstring: String = ""): [ClinicalTrial]
+  @cypher(
+      statement: """MATCH (c:Company)<-[:sponsoredByCompany]-(ct:ClinicalTrial)
+      WHERE c.Name CONTAINS $companySubstring
+      WITH c, ct
+      RETURN ct"""
+  )
+
+  trialsByDate(dateSubstring: String = ""): [ClinicalTrial]
+  @cypher(
+      statement: """MATCH (ct:ClinicalTrial) 
+      WHERE ct.FirstPostedDate = $dateSubstring
+      RETURN ct"""
+  )
+
+  userCount: Int! @cypher(statement: "MATCH (u:User) RETURN COUNT(u)")
+  ratingsCount: [RatingCount]
+    @cypher(
+      statement: "MATCH (r:Review) WITH r.stars AS stars, COUNT(*) AS count ORDER BY stars RETURN {stars: stars, count: count}"
+    )
+    trialCount: Int! @cypher(statement: "MATCH (ct:ClinicalTrial) RETURN COUNT(ct)")
+  clinicalTrialCount: [ClinicalTrialCount]
+    @cypher(
+      statement: "MATCH (ct:ClinicalTrial) WITH ct as trials, COUNT(*) as count ORDER BY count RETURN {trials: trials, count: count}"
+    )
+}
